@@ -615,7 +615,7 @@ def load_vocab(spacy_de, spacy_en):
 
 
 def collate_batch(batch, src_pipeline, target_pipeline, 
-        src_vocab, target_vocab, device=torch.device('cpu'), 
+        src_vocab, target_vocab, device=None, 
         max_padding=128, pad_id=2):
 
     start_id = torch.tensor([0], device=device)
@@ -673,6 +673,7 @@ def create_dataloaders(
             tokenize_de,
             tokenize_en,
             src_vocab,
+            target_vocab,
             device,
             max_padding=max_padding,
             pad_id=src_vocab.get_stoi()['<blank>']
@@ -793,7 +794,7 @@ def train_de_to_en_model():
         pass 
     else:
         train_worker(
-            0, 1, src_vocab, target_vocab, spacy_de, spacy_en, config, False)
+            None, 1, src_vocab, target_vocab, spacy_de, spacy_en, config, False)
 
 
 if __name__ == '__main__':
