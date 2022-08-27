@@ -21,6 +21,7 @@ torchdata = "*"
 torchtext = "*"
 spacy = "*"
 tdqm = "*"
+matplotlib = "*"
 
 [dev-packages]
 
