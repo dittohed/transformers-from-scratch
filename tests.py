@@ -2,7 +2,7 @@ import torch
 
 from torch.optim.lr_scheduler import LambdaLR
 
-from training import LabelSmoothing, SourceTargetCopyLoss, rate, run_epoch
+from training import LabelSmoothing, Seq2SeqLoss, rate, run_epoch
 from transformer import build_model
 from utils import Batch, subsequent_mask, decode_greedy
 from lang import load_tokenizers, load_vocab, train_worker
@@ -66,7 +66,7 @@ def train_copy_task_test():
         run_epoch(
             data_gen(vocab_size, batch_size, n_batches),
             model,
-            SourceTargetCopyLoss(model.head, criterion),
+            Seq2SeqLoss(model.head, criterion),
             optimizer=optimizer,
             lr_scheduler=lr_scheduler,
             n_batches=n_batches,
@@ -78,7 +78,7 @@ def train_copy_task_test():
         run_epoch(
             data_gen(vocab_size, batch_size, int(n_batches/4)),
             model,
-            SourceTargetCopyLoss(model.head, criterion),
+            Seq2SeqLoss(model.head, criterion),
             n_batches=int(n_batches/4),
             mode='eval')
 

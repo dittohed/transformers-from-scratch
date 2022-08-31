@@ -17,7 +17,7 @@ import spacy
 
 from utils import Batch, collate_batch
 from transformer import build_model
-from training import LabelSmoothing, SourceTargetCopyLoss, rate, run_epoch
+from training import LabelSmoothing, Seq2SeqLoss, rate, run_epoch
 
 
 def load_tokenizers():
@@ -187,7 +187,7 @@ def train_worker(gpu, n_gpus_per_node, src_vocab, target_vocab,
         run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in train_dataloader),
             model,
-            SourceTargetCopyLoss(module.head, criterion),
+            Seq2SeqLoss(module.head, criterion),
             optimizer=optimizer,
             lr_scheduler=lr_scheduler,
             n_batches=n_batches_train,
@@ -202,6 +202,6 @@ def train_worker(gpu, n_gpus_per_node, src_vocab, target_vocab,
         run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in val_dataloader),
             model,
-            SourceTargetCopyLoss(module.head, criterion),
+            Seq2SeqLoss(module.head, criterion),
             n_batches=n_batches_val,
             mode='eval')

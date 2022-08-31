@@ -89,7 +89,7 @@ class LabelSmoothing(nn.Module):
         # (gradient won't be calculated for this tensor)
 
 
-class SourceTargetCopyLoss:
+class Seq2SeqLoss:
     def __init__(self, head, criterion):
         self.head = head 
         self.criterion = criterion
