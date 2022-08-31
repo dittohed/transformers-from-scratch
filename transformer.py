@@ -31,7 +31,7 @@ class Encoder(nn.Module):
     def forward(self, x, mask):
         for layer in self.layers:
             x = layer(x, mask)
-        return self.norm(x)  # TODO: po co tutaj norm na końcu?
+        return self.norm(x)  # TODO: Why the authors put norm here?
 
 
 class DecoderLayer(nn.Module):
@@ -44,8 +44,6 @@ class DecoderLayer(nn.Module):
         self.res_conn = clones(ResConnectionWithLayerNorm(size, dropout), 3)
 
     def forward(self, x, memory, src_mask, target_mask):
-        # TODO: po co te lambdy?
-        # TODO: po co jakikolwiek src_mask?
         x = self.res_conn[0](x, lambda x: self.mha1(x, x, x, target_mask))
         x = self.res_conn[1](x, lambda x: self.mha2(x, memory, memory, src_mask))
         return self.res_conn[2](x, self.ff)
@@ -60,7 +58,7 @@ class Decoder(nn.Module):
     def forward(self, x, memory, src_mask, target_mask):
         for layer in self.layers:
             x  = layer(x, memory, src_mask, target_mask)
-        return self.norm(x)  # TODO: po co tutaj norm na końcu?
+        return self.norm(x)  # TODO: Why the authors put norm here?
 
 
 class ResConnectionWithLayerNorm(nn.Module):
@@ -122,6 +120,7 @@ def build_model(src_vocab_size, target_vocab_size, n_layers=6, d_model=512,
 
     for p in model.parameters():
         if p.dim() > 1:
-            nn.init.xavier_uniform_(p)  # TODO: doczytać i zrozumieć
+            # TODO: Read more about it
+            nn.init.xavier_uniform_(p)  
 
     return model

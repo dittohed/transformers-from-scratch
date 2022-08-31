@@ -101,4 +101,5 @@ class SourceTargetCopyLoss:
                 y.contiguous().view(-1))
         loss /= norm
 
-        return loss * norm, loss  # WTF?
+        # TODO: Why use / norm for computing gradient?
+        return loss * norm, loss 

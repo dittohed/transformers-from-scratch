@@ -20,7 +20,6 @@ class LayerNorm(nn.Module):
         return self.gamma * (x - mean) / (std + self.eps) + self.beta
 
 
-# TODO: czemu akurat tak?
 class FeedForward(nn.Module):
     def __init__(self, d_model, d_ff, dropout=0.1):
         super(FeedForward, self).__init__()
