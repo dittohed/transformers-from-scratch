@@ -41,7 +41,7 @@ def inference_test():
     print("Example Untrained Model Prediction:", ys)
 
 
-def train_copy_task_test():
+def train_copy_task():
     vocab_size = 11
     batch_size = 64
     n_batches = 32
@@ -109,7 +109,7 @@ def data_gen(vocab_size, batch_size, n_batches):
         yield Batch(src, target, 0)
 
 
-def train_de_to_en_test():
+def train_de_to_en():
     config = {
         'batch_size': 8,
         'distributed': False,
@@ -131,5 +131,5 @@ def train_de_to_en_test():
 if __name__ == '__main__':
     # inference_test()
     # label_smoothing_test()
-    # train_copy_task_test()
-    train_de_to_en_test()
+    train_copy_task()
+    # train_de_to_en()
