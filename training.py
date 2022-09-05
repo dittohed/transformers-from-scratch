@@ -5,26 +5,29 @@ from tqdm import tqdm
 
 
 def run_epoch(
-        data_gen,
-        model,
-        criterion,
-        optimizer=None,
-        lr_scheduler=None,
-        n_batches=None,
-        curr_epoch=None,
-        n_epochs=None,
-        mode='train'):
+        device, model, dataloader, criterion,
+        optimizer=None, lr_scheduler=None, n_batches=None,
+        curr_epoch=None, n_epochs=None, mode='train', 
+        cls_token_only=False):
     assert mode in ['train', 'eval']
 
-    tqdm_it = tqdm(enumerate(data_gen), total=n_batches, leave=True)
+    tqdm_it = tqdm(enumerate(dataloader), total=n_batches, leave=True)
 
     if mode == 'train':
         tqdm_it.set_description(f'Epoch [{curr_epoch+1}/{n_epochs}]')
 
     for i, batch in tqdm_it:
-        out = model.forward(batch.src, batch.target, 
-                            batch.src_mask, batch.target_mask)
-        loss, loss_node = criterion(out, batch.target_y, batch.n_tokens)
+        if cls_token_only:
+            x, y = batch
+            x = x.to(device)
+            y = y.to(device)
+
+            out = model.forward(x)
+            loss, loss_node = criterion(out, y, 1)
+        else:
+            out = model.forward(batch.src, batch.target, 
+                                batch.src_mask, batch.target_mask)
+            loss, loss_node = criterion(out, batch.target_y, batch.n_tokens)
 
         if mode == 'train':
             loss_node.backward()
@@ -38,6 +41,27 @@ def run_epoch(
         tqdm_it.set_postfix(loss=loss.item())
         del loss 
         del loss_node
+
+
+# TODO: implement for multiple GPUs
+def train_worker(
+        device, model, train_dataloader, val_dataloader,
+        criterion, optimizer, lr_scheduler, 
+        n_batches_train, n_batches_val, n_epochs,
+        cls_token_only=False):
+
+    for epoch in range(n_epochs):
+        model.train()
+        run_epoch(device, model, train_dataloader, criterion, optimizer,
+            lr_scheduler, n_batches_train, epoch, n_epochs, 'train',
+            cls_token_only=cls_token_only)
+            
+        # TODO: checkpoint
+
+        model.eval()
+        run_epoch(device, model, val_dataloader, criterion, 
+            n_batches=n_batches_val, mode='eval',
+            cls_token_only=cls_token_only)
 
 
 # Very important to use it!
