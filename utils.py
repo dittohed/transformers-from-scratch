@@ -36,7 +36,7 @@ class Batch:
 
 
 def collate_batch(batch, src_pipeline, target_pipeline, 
-        src_vocab, target_vocab, device=None, 
+        src_vocab, target_vocab, device, 
         max_padding=128, pad_id=2):
 
     start_id = torch.tensor([0], device=device)
