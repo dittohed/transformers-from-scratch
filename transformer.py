@@ -1,10 +1,11 @@
 import copy
 
+import torch
 import torch.nn as nn
 
 from layers import (
     LayerNorm, FeedForward, PositionalEncoding, 
-    Embedding, ClassificationHead)
+    Embedding, ClassificationHead, ClsTokenPrepend)
 from utils import clones
 from attention import MultiHeadedAttention
 
@@ -72,10 +73,10 @@ class ResConnectionWithLayerNorm(nn.Module):
         return x + self.dropout(sublayer(self.norm(x)))
 
 
-class EncoderDecoder(nn.Module):
+class EncoderDecoderModel(nn.Module):
     def __init__(self, encoder, decoder, src_preproc, target_preproc,
                  head):
-        super(EncoderDecoder, self).__init__()
+        super(EncoderDecoderModel, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.src_preproc = src_preproc
@@ -94,7 +95,20 @@ class EncoderDecoder(nn.Module):
                             src_mask, target_mask)
 
 
-def build_model(src_vocab_size, target_vocab_size, n_layers=6, d_model=512, 
+class EncoderModel(nn.Module):
+    def __init__(self, encoder, input_preproc, head):
+        super(EncoderModel, self).__init__()
+
+        self.encoder = encoder 
+        self.input_preproc = input_preproc
+        self.head = head
+
+    def forward(self, tokens):
+        tokens = torch.squeeze(tokens)  # TODO: find another fix
+        return self.encoder(self.input_preproc(tokens), None)
+
+
+def build_encoder_decoder_model(src_vocab_size, target_vocab_size, n_layers=6, d_model=512, 
                 d_ff=2048, n_heads=8, dropout=0.1):
     c = copy.deepcopy
     mha = MultiHeadedAttention(n_heads, d_model)
@@ -111,16 +125,36 @@ def build_model(src_vocab_size, target_vocab_size, n_layers=6, d_model=512,
                                 c(pos_encoding))
     head = ClassificationHead(d_model, target_vocab_size)
 
-    model = EncoderDecoder(
-                encoder,
-                decoder,
-                src_preproc,
-                target_preproc,
-                head)
+    model = EncoderDecoderModel(encoder, decoder,
+                        src_preproc, target_preproc, head)
 
     for p in model.parameters():
         if p.dim() > 1:
             # TODO: Read more about it
             nn.init.xavier_uniform_(p)  
+
+    return model
+
+
+def build_encoder_model(
+        d_input, n_classes, n_layers=6, d_model=512, d_ff=2048, n_heads=8, 
+        dropout=0.1):
+    embedding = nn.Linear(d_input, d_model)
+    cls_token_prep = ClsTokenPrepend(d_model)
+    pos_encoding = PositionalEncoding(d_model, dropout)
+
+    mha = MultiHeadedAttention(n_heads, d_model)
+    ff = FeedForward(d_model, d_ff, dropout)
+    
+    input_preproc = nn.Sequential(embedding, cls_token_prep, pos_encoding)
+    encoder = Encoder(EncoderLayer(d_model, mha, ff, dropout), 
+                      n_layers)
+    head = ClassificationHead(d_model, n_classes, cls_token_only=True)
+
+    model = EncoderModel(encoder, input_preproc, head)
+    for p in model.parameters():
+        if p.dim() > 1:
+            # TODO: Read more about it
+            nn.init.xavier_uniform_(p)
 
     return model

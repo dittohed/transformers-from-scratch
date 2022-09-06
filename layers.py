@@ -3,7 +3,7 @@ import math
 import torch
 import torch.nn as nn
 
-from torch.nn.functional import log_softmax
+from torch.nn.functional import softmax, log_softmax
 
 
 class LayerNorm(nn.Module):
@@ -34,9 +34,9 @@ class FeedForward(nn.Module):
 
 
 class Embedding(nn.Module):
-    def __init__(self, d_model, vocab_size):
+    def __init__(self, d_input, d_model):
         super(Embedding, self).__init__()
-        self.lut = nn.Embedding(vocab_size, d_model)
+        self.lut = nn.Embedding(d_input, d_model)
         self.d_model = d_model
 
     def forward(self, x):
@@ -46,12 +46,18 @@ class Embedding(nn.Module):
 
 
 class ClassificationHead(nn.Module):
-    def __init__(self, d_model, vocab_size):
+    def __init__(self, d_model, vocab_size, cls_token_only=False):
         super(ClassificationHead, self).__init__()
         self.linear = nn.Linear(d_model, vocab_size)
+        self.cls_token_only = cls_token_only
 
     def forward(self, x):
-        return log_softmax(self.linear(x), dim=-1)
+        if self.cls_token_only:
+            preds = softmax(self.linear(x[:, 0, :]), dim=-1)
+        else:
+            preds = log_softmax(self.linear(x), dim=-1)
+
+        return preds
 
 
 class PositionalEncoding(nn.Module):
@@ -76,3 +82,28 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         x = x + self.pos_encodings[:, : x.size(1)].requires_grad_(False)
         return self.dropout(x)
+
+
+class ClsTokenPrepend(nn.Module):
+    def __init__(self, d_model):
+        super(ClsTokenPrepend, self).__init__()
+        self.d_model = d_model
+        self.cls_token = nn.Parameter(torch.randn((1, self.d_model)))
+
+    def forward(self, tokens_batch):
+        return torch.stack(
+            [torch.vstack((self.cls_token, tokens)) for tokens in tokens_batch])
+
+
+if __name__ == '__main__':
+    # tokens = torch.randn((32, 16, 512))
+    # cls_token_prep = ClsTokenPrepend(512)
+    # proc = cls_token_prep(tokens)
+    # print(proc.shape)
+    # print(proc[0][0])
+    # print(proc[0][1])
+
+    head = ClassificationHead(512, 1000, cls_token_only=True)
+    x = torch.randn((8, 64, 512))
+    out = head(x)
+    print(out.shape)
