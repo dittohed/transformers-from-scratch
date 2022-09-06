@@ -23,14 +23,14 @@ def run_epoch(
             y = y.to(device)
 
             out = model.forward(x)
-            loss, loss_node = criterion(out, y, 1)
+            loss = criterion(out, y, out.shape[0])
         else:
             out = model.forward(batch.src, batch.target, 
                                 batch.src_mask, batch.target_mask)
-            loss, loss_node = criterion(out, batch.target_y, batch.n_tokens)
+            loss = criterion(out, batch.target_y, batch.n_tokens)
 
         if mode == 'train':
-            loss_node.backward()
+            loss.backward()
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
             lr_scheduler.step()
@@ -40,7 +40,6 @@ def run_epoch(
 
         tqdm_it.set_postfix(loss=loss.item())
         del loss 
-        del loss_node
 
 
 # TODO: implement for multiple GPUs
@@ -113,7 +112,7 @@ class LabelSmoothing(nn.Module):
         # (gradient won't be calculated for this tensor)
 
 
-class Seq2SeqLoss:
+class LossWrapper:
     def __init__(self, head, criterion):
         self.head = head 
         self.criterion = criterion
@@ -125,5 +124,4 @@ class Seq2SeqLoss:
                 y.contiguous().view(-1))
         loss /= norm
 
-        # TODO: Why use / norm for computing gradient?
-        return loss * norm, loss 
+        return loss
