@@ -119,9 +119,9 @@ def build_encoder_decoder_model(device, src_vocab_size, target_vocab_size,
                       n_layers)
     decoder = Decoder(DecoderLayer(d_model, c(mha), c(mha), c(ff), dropout), 
                       n_layers)
-    src_preproc = nn.Sequential(Embedding(d_model, src_vocab_size), 
+    src_preproc = nn.Sequential(Embedding(src_vocab_size, d_model), 
                                 c(pos_encoding))
-    target_preproc = nn.Sequential(Embedding(d_model, target_vocab_size), 
+    target_preproc = nn.Sequential(Embedding(target_vocab_size, d_model), 
                                 c(pos_encoding))
     head = ClassificationHead(d_model, target_vocab_size)
 
