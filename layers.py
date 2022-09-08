@@ -53,7 +53,7 @@ class ClassificationHead(nn.Module):
 
     def forward(self, x):
         if self.cls_token_only:
-            preds = softmax(self.linear(x[:, 0, :]), dim=-1)
+            preds = self.linear(x[:, 0, :])  # Logits
         else:
             preds = log_softmax(self.linear(x), dim=-1)
 
