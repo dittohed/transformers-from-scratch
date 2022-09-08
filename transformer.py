@@ -108,8 +108,8 @@ class EncoderModel(nn.Module):
         return self.encoder(self.input_preproc(tokens), None)
 
 
-def build_encoder_decoder_model(src_vocab_size, target_vocab_size, n_layers=6, d_model=512, 
-                d_ff=2048, n_heads=8, dropout=0.1):
+def build_encoder_decoder_model(device, src_vocab_size, target_vocab_size, 
+        n_layers=6, d_model=512, d_ff=2048, n_heads=8, dropout=0.1):
     c = copy.deepcopy
     mha = MultiHeadedAttention(n_heads, d_model)
     ff = FeedForward(d_model, d_ff, dropout)
@@ -133,12 +133,13 @@ def build_encoder_decoder_model(src_vocab_size, target_vocab_size, n_layers=6, d
             # TODO: Read more about it
             nn.init.xavier_uniform_(p)  
 
+    model.to(device)
     return model
 
 
 def build_encoder_model(
-        d_input, n_classes, n_layers=6, d_model=512, d_ff=2048, n_heads=8, 
-        dropout=0.1):
+        device, d_input, n_classes, n_layers=6, d_model=512, d_ff=2048, 
+        n_heads=8, dropout=0.1):
     embedding = nn.Linear(d_input, d_model)
     cls_token_prep = ClsTokenPrepend(d_model)
     pos_encoding = PositionalEncoding(d_model, dropout)
@@ -157,4 +158,5 @@ def build_encoder_model(
             # TODO: Read more about it
             nn.init.xavier_uniform_(p)
 
+    model.to(device)
     return model

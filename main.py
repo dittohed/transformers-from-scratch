@@ -44,7 +44,7 @@ def train_copy_task(device):
 
     # Model
     model = build_encoder_decoder_model(
-                vocab_size, vocab_size, n_layers=2).to(device)
+                vocab_size, vocab_size, n_layers=2)
 
     # Training
     criterion = LabelSmoothing(n_classes=vocab_size, padding_idx=0, 
@@ -104,7 +104,7 @@ def train_de_to_en(device):
     
     # Model
     model = build_encoder_decoder_model(len(src_vocab), len(target_vocab), 
-                                        n_layers).to(device)
+                                        n_layers)
 
     # Training
     criterion = LabelSmoothing(n_classes=len(target_vocab), 
