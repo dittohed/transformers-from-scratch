@@ -103,8 +103,8 @@ def train_de_to_en(device):
     val_dataloader = (Batch(b[0], b[1], pad_idx) for b in val_dataloader)
     
     # Model
-    model = build_encoder_decoder_model(len(src_vocab), len(target_vocab), 
-                                        n_layers)
+    model = build_encoder_decoder_model(device, 
+                len(src_vocab), len(target_vocab), n_layers)
 
     # Training
     criterion = LabelSmoothing(n_classes=len(target_vocab), 
@@ -166,7 +166,8 @@ def train_vit_classifier(device):
     n_batches_val = int(math.ceil(len(val_ds)/batch_size))
     
     # Model
-    model = build_encoder_model(patch_size**2*3, n_classes, d_model=d_model)
+    model = build_encoder_model(device,
+        patch_size**2*3, n_classes, d_model=d_model)
 
     # Training
     criterion = CrossEntropyLoss()
