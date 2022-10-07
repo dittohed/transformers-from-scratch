@@ -7,7 +7,7 @@ import torchvision.transforms as transforms
 from torch.optim.lr_scheduler import LambdaLR
 from torch.nn import CrossEntropyLoss
 
-from training import train_worker, LabelSmoothing, rate, LossWrapper
+from training import train_worker, LabelSmoothing, rate, LossWrapper, run_epoch
 from transformer import build_encoder_decoder_model, build_encoder_model
 from utils import Batch, decode_greedy
 from lang import load_tokenizers, load_vocab, create_dataloaders
@@ -17,9 +17,9 @@ from vision import Patchify
 def train_copy_task(device):
     # Hyperparameters
     vocab_size = 11
-    batch_size = 64
-    n_batches = 32
-    n_epochs = 1
+    batch_size = 1
+    n_batches = 4
+    n_epochs = 100
 
     # Data
     def data_gen(vocab_size, batch_size, n_batches):
@@ -28,7 +28,10 @@ def train_copy_task(device):
         """
         for i in range(n_batches):
             # Each rows contains an example of length 10
-            data = torch.randint(1, vocab_size, size=(batch_size, 10))
+            generator = torch.Generator()
+            generator.manual_seed(47)
+            data = torch.randint(1, vocab_size, size=(batch_size, 10),
+                                 generator=generator)
             data[:, 0] = 1
 
             # TODO: try without requires_grad_(False) since detach is used
@@ -37,14 +40,13 @@ def train_copy_task(device):
 
             yield Batch(src, target, 0)
 
-    train_dataloader = data_gen(vocab_size, batch_size, n_batches)
+    
     n_batches_train = n_batches
-    val_dataloader = data_gen(vocab_size, batch_size, int(n_batches/4))
     n_batches_val = int(n_batches/4)
 
     # Model
     model = build_encoder_decoder_model(
-                vocab_size, vocab_size, n_layers=2)
+                device, vocab_size, vocab_size, n_layers=2)
 
     # Training
     criterion = LabelSmoothing(n_classes=vocab_size, padding_idx=0, 
@@ -58,9 +60,18 @@ def train_copy_task(device):
                         step, model.src_preproc[0].d_model, factor=1.0, 
                         warmup_iters=400))
 
-    train_worker(device, model, train_dataloader, val_dataloader,
-        criterion, optimizer, lr_scheduler, 
-        n_batches_train, n_batches_val, n_epochs)
+    for epoch in range(n_epochs):
+        model.train()
+        train_dataloader = data_gen(vocab_size, batch_size, n_batches)
+        run_epoch(device, model, train_dataloader, LossWrapper(model.head, criterion), 
+            optimizer, lr_scheduler, n_batches_train, epoch, n_epochs, 'train')
+            
+        # TODO: checkpoint
+
+        model.eval()
+        val_dataloader = data_gen(vocab_size, batch_size, int(n_batches/4))
+        run_epoch(device, model, val_dataloader, 
+            LossWrapper(model.head, criterion), n_batches=n_batches_val, mode='eval')
 
     # Eval
     print('=== Post-training test ===')
@@ -122,15 +133,23 @@ def train_de_to_en(device):
         n_batches_train, n_batches_val, n_epochs)
 
 
+# TODO: Not able to overfit to single batch, contrary to copy task
+# Add num workers next to device.
+# Works! That was due to softmax.
+# Remember about normalization!
+# Now read the paper, figure out proper hyperparams and run the real training.
 def train_vit_classifier(device):
     # Hyperparameters
     img_size = 256
     n_classes = 37
-    d_model = 512
+    n_layers = 2
+    d_model = 128
+    d_ff = 256
+    n_heads = 2
     patch_size = 16
-    batch_size = 8
-    n_epochs = 8
-    base_lr = 1.0 
+    batch_size = 2
+    n_epochs = 1000
+    base_lr = 0.1
     warmup = 3000
 
     # Data
@@ -157,7 +176,7 @@ def train_vit_classifier(device):
 
     train_dataloader = torch.utils.data.DataLoader(train_ds, 
                                                batch_size=batch_size, 
-                                               shuffle=True)
+                                               shuffle=False)
     val_dataloader = torch.utils.data.DataLoader(val_ds, 
                                                batch_size=batch_size, 
                                                shuffle=False)
@@ -167,7 +186,8 @@ def train_vit_classifier(device):
     
     # Model
     model = build_encoder_model(device,
-        patch_size**2*3, n_classes, d_model=d_model)
+        patch_size**2*3, n_classes, 
+        n_layers=n_layers, d_model=d_model, d_ff=d_ff, n_heads=n_heads)
 
     # Training
     criterion = CrossEntropyLoss()
