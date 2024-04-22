@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 
 from torch.optim.lr_scheduler import LambdaLR
@@ -41,46 +42,54 @@ def inference_test():
     print("Example Untrained Model Prediction:", ys)
 
 
-def train_copy_task():
-    vocab_size = 11
-    batch_size = 64
-    n_batches = 32
-    n_epochs = 1
-
-    criterion = LabelSmoothing(n_classes=vocab_size, padding_idx=0, 
-                               smoothing=0)
+def train_restore_input_task(
+    vocab_size: int, min_input_len: int, max_input_len: int,
+    batch_size: int, n_steps: int, n_epochs: int
+):
+    """
+    Train a demo small transformer for restoring short input
+    small integer sequences.
+    """
 
     model = build_model(vocab_size, vocab_size, n_layers=2)
 
-    optimizer = torch.optim.Adam(
-                    model.parameters(), lr=0.5, 
-                    betas=(0.9, 0.98), eps=1e-9)
+    criterion = LabelSmoothing(n_classes=vocab_size, padding_idx=0, smoothing=0)    
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.5, betas=(0.9, 0.98), eps=1e-9)
+
     lr_scheduler = LambdaLR(
                     optimizer=optimizer,
                     lr_lambda=lambda step: rate(
                         step, model.src_preproc[0].d_model, factor=1.0, 
                         warmup_iters=400))
 
+    data_gen_val = data_gen(
+        vocab_size, min_input_len, max_input_len,
+        batch_size, n_steps
+    )
+
     for epoch in range(n_epochs):
-        model.train()  # Switch to training mode
+        data_gen_train = data_gen(
+            vocab_size, min_input_len, max_input_len,
+            batch_size, n_steps
+        )
         run_epoch(
-            data_gen(vocab_size, batch_size, n_batches),
+            data_gen_train,
             model,
             Seq2SeqLoss(model.head, criterion),
             optimizer=optimizer,
             lr_scheduler=lr_scheduler,
-            n_batches=n_batches,
+            n_batches=n_steps,
             curr_epoch=epoch,
             n_epochs=n_epochs,
-            mode='train')
-
-        model.eval()
+            mode='train'
+        )
         run_epoch(
-            data_gen(vocab_size, batch_size, int(n_batches/4)),
+            data_gen_val,
             model,
             Seq2SeqLoss(model.head, criterion),
-            n_batches=int(n_batches/4),
-            mode='eval')
+            n_batches=n_steps,
+            mode='eval'
+        )
 
     print('=== Post-training test ===')
     model.eval()
@@ -92,44 +101,40 @@ def train_copy_task():
     print(f'Prediction: {pred}')
 
 
-def data_gen(vocab_size, batch_size, n_batches):
+def data_gen(
+    vocab_size: int, min_input_len: int, max_input_len: int,
+    batch_size: int, n_steps: int
+):
     """
-    Generates random data for a source-to-target copy task.
+    Generate random data for the input restoration task
+    (output = input).
     """
 
-    for i in range(n_batches):
-        # Each rows contains an example of length 10
-        data = torch.randint(1, vocab_size, size=(batch_size, 10))
-        data[:, 0] = 1
+    for _ in range(n_steps):
+        data = np.random.randint(1, vocab_size, size=(batch_size, max_input_len))
 
-        # TODO: try without requires_grad_(False) since detach is used
-        src = data.requires_grad_(False).clone().detach()
-        target = data.requires_grad_(False).clone().detach()
+        # Insert padding randomly at the end
+        lens = np.random.randint(min_input_len, max_input_len+1, size=batch_size)
+        data = data * (np.arange(max_input_len) < lens[:, None])
 
-        yield Batch(src, target, 0)
-
-
-def train_de_to_en():
-    config = {
-        'batch_size': 8,
-        'distributed': False,
-        'n_epochs': 8,
-        'base_lr': 1.0,
-        'max_padding': 72,
-        'warmup': 3000}
-
-    spacy_de, spacy_en = load_tokenizers()
-    src_vocab, target_vocab = load_vocab(spacy_de, spacy_en)
-
-    if config['distributed']:
-        pass 
-    else:
-        train_worker(
-            None, 1, src_vocab, target_vocab, spacy_de, spacy_en, config, False)
+        data = torch.tensor(data, dtype=torch.long)
+        yield Batch(data, data, pad=0)
 
 
 if __name__ == '__main__':
-    # inference_test()
-    # label_smoothing_test()
-    train_copy_task()
-    # train_de_to_en()
+    VOCAB_SIZE = 10  # Inputs will be random ints from [1, VOCAB_SIZE-1] interval
+                     # (0 for padding)
+    MIN_INPUT_LEN = 5
+    MAX_INPUT_LEN = 10
+    BATCH_SIZE = 64
+    N_STEPS = 32  # Number of randomly generated batches per epoch
+    N_EPOCHS = 5
+
+    train_restore_input_task(
+        vocab_size=VOCAB_SIZE,
+        min_input_len=MIN_INPUT_LEN,
+        max_input_len=MAX_INPUT_LEN,
+        batch_size=BATCH_SIZE,
+        n_steps=N_STEPS,
+        n_epochs=N_EPOCHS
+    )
