@@ -3,19 +3,47 @@ import copy
 import torch
 import torch.nn as nn
 
-from torch.nn.functional import pad
 
-
-def clones(module, n):
+def clones(module: nn.Module, n: int) -> nn.ModuleList:
     """
-    Produce n identical layers.
+    Produce `n` identical layers.
     """
 
     return nn.ModuleList([copy.deepcopy(module) for _ in range(n)]) 
 
 
 class Batch:
-    def __init__(self, src, target=None, pad=2):
+    """
+    Custom wrapper for inputs and outputs.
+
+    Attributes:
+        src (torch.Tensor): 
+            Tensor of shape [B, MAX_LEN_IN] with integer representations 
+            of input tokens.
+        src_mask (torch.Tensor):
+            Tensor of shape [B, 1, MAX_LEN_IN] with booleans, where
+            False indicates input padding (has to be used to calculate self-attention
+            only with respect to actual tokens).
+        target (torch.Tensor):
+            Tensor of shape [B, MAX_LEN_OUT-1] with integer representations 
+            of GT output tokens. It's used during training with "teacher forcing"
+            method (multiple GTs based on single sequence) as decoder input so 
+            the last token is removed.
+        target_y (torch.Tensor):
+            Tensor of shape [B, MAX_LEN_OUT-1] with integer representations 
+            of GT output tokens. It's used during training with "teacher forcing"
+            method (multiple GTs based on single sequence) as decoder output so 
+            the first token is removed.
+        target_mask (torch.Tensor):
+            Tensor of shape [B, MAX_LEN_OUT-1, MAX_LEN_OUT-1] with booleans, where
+            False indicates GT output padding (has to be used to calculate attention
+            only with respect to actual tokens) or masked tokens (to perform masked 
+            attention).
+        n_tokens (int):
+            Total number of tokens that will be predicted.
+    """
+
+    def __init__(self, src: torch.Tensor, target: torch.Tensor = None, pad: int = 0):
         self.src = src 
         self.src_mask = (src != pad).unsqueeze(-2)
 
@@ -23,79 +51,25 @@ class Batch:
             self.target = target[:, :-1]
             self.target_y = target[:, 1:]
             self.target_mask = self.make_mask(self.target, pad)
-            self.n_tokens = (self.target_y != pad).data.sum()  # TODO: data?
+            self.n_tokens = (self.target_y != pad).sum().item()
 
     @staticmethod
-    def make_mask(target, pad):
+    def make_mask(target: torch.Tensor, pad: int) -> torch.Tensor:
         target_mask = (target != pad).unsqueeze(-2)
         target_mask = (
-            target_mask & subsequent_mask(target.size(-1))
-                            .type_as(target_mask.data))
+            target_mask 
+            & subsequent_mask(target.size(-1)).type_as(target_mask.data)
+        )
 
         return target_mask
 
 
-def collate_batch(batch, src_pipeline, target_pipeline, 
-        src_vocab, target_vocab, device=None, 
-        max_padding=128, pad_id=2):
+def subsequent_mask(size: int) -> torch.Tensor:
+    """
+    Return a boolean square mask, where in `i`-th row, `i` first elements
+    from the left are True.
+    """
 
-    start_id = torch.tensor([0], device=device)
-    end_id = torch.tensor([1], device=device)
-
-    src_list = []
-    target_list = []
-
-    for (src, target) in batch:
-        src_processed = torch.cat(
-                            [start_id,
-                             torch.tensor(src_vocab(src_pipeline(src)),
-                                          dtype=torch.int64,
-                                          device=device),
-                             end_id], 
-                             0)
-
-        target_processed = torch.cat(
-                            [start_id,
-                             torch.tensor(target_vocab(target_pipeline(target)),
-                                          dtype=torch.int64,
-                                          device=device),
-                             end_id], 
-                             0)
-
-        src_list.append(
-            pad(src_processed, (0, max_padding - len(src_processed)), 
-                value=pad_id)
-        )
-
-        target_list.append(
-            pad(target_processed, (0, max_padding - len(target_processed)), 
-                value=pad_id)
-        )
-
-    src = torch.stack(src_list)
-    target = torch.stack(target_list)
-
-    return (src, target)
-
-
-def decode_greedy(model, src, src_mask, max_len, start_symbol):
-    memory = model.encode(src, src_mask)
-    ys = torch.zeros(1, 1).fill_(start_symbol).type_as(src)
-
-    for i in range(max_len - 1):
-        out = model.decode(memory, src_mask, ys, 
-                           subsequent_mask(ys.size(1)).type_as(src))
-        prob = model.head(out[:, -1])
-        _, next_word = torch.max(prob, dim=1)
-        next_word = next_word[0]
-        ys = torch.cat(
-            [ys, torch.zeros(1, 1).type_as(src).fill_(next_word)], 
-            dim=1)
-
-    return ys 
-
-
-def subsequent_mask(size):
     scores_shape = (1, size, size)
     mask = torch.triu(torch.ones(scores_shape), diagonal=1).type(torch.uint8)
 

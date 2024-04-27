@@ -1,135 +1,132 @@
+import numpy as np
 import torch
 
 from torch.optim.lr_scheduler import LambdaLR
 
-from training import LabelSmoothing, Seq2SeqLoss, rate, run_epoch
-from transformer import build_model
-from utils import Batch, subsequent_mask, decode_greedy
-from lang import load_tokenizers, load_vocab, train_worker
+from training import KLDivWithLabelSmoothing, Seq2SeqLoss, rate, run_epoch
+from transformer import Transformer
+from utils import Batch, subsequent_mask
 
 
-def label_smoothing_test():
-    criterion = LabelSmoothing(5, 0, 0.1)
-    preds = torch.Tensor([
-        [0, 0.2, 0.7, 0.1, 0],
-        [0, 0.2, 0.7, 0.1, 0]])
-    
-    criterion(x=preds, target=torch.LongTensor([1, 2]))
-    print(criterion.true_dist)
+def train_restore_input_task(
+    vocab_size: int, min_input_len: int, max_input_len: int, batch_size: int, 
+    n_steps: int, n_epochs: int
+) -> None:
+    """
+    Train a small transformer for restoring short integer sequences.
+    """
 
+    model = Transformer.from_hyperparams(vocab_size, vocab_size, n_layers=2)
 
-def inference_test():
-    test_model = build_model(11, 11, n_layers=2, n_heads=4)
-    test_model.eval()
-    src = torch.LongTensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]])
-    src_mask = torch.ones(1, 1, 10)
-
-    memory = test_model.encode(src, src_mask)
-    ys = torch.zeros(1, 1).type_as(src)
-
-    for i in range(9):
-        out = test_model.decode(
-            memory, src_mask, ys, subsequent_mask(ys.size(1)).type_as(src.data)
-        )
-        prob = test_model.head(out[:, -1])
-        _, next_word = torch.max(prob, dim=1)
-        next_word = next_word.data[0]
-        ys = torch.cat(
-            [ys, torch.empty(1, 1).type_as(src.data).fill_(next_word)], dim=1
-        )
-
-    print("Example Untrained Model Prediction:", ys)
-
-
-def train_copy_task():
-    vocab_size = 11
-    batch_size = 64
-    n_batches = 32
-    n_epochs = 1
-
-    criterion = LabelSmoothing(n_classes=vocab_size, padding_idx=0, 
-                               smoothing=0)
-
-    model = build_model(vocab_size, vocab_size, n_layers=2)
-
-    optimizer = torch.optim.Adam(
-                    model.parameters(), lr=0.5, 
-                    betas=(0.9, 0.98), eps=1e-9)
+    criterion = KLDivWithLabelSmoothing(n_classes=vocab_size, pad_idx=0, smoothing=0)    
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.5, betas=(0.9, 0.98), eps=1e-9)
     lr_scheduler = LambdaLR(
-                    optimizer=optimizer,
-                    lr_lambda=lambda step: rate(
-                        step, model.src_preproc[0].d_model, factor=1.0, 
-                        warmup_iters=400))
+        optimizer=optimizer,
+        lr_lambda=lambda step: rate(
+            step, model.src_preproc[0].d_model, factor=1.0, 
+            warmup_iters=400
+        )
+    )
 
     for epoch in range(n_epochs):
-        model.train()  # Switch to training mode
+        data_gen_train = data_gen(
+            vocab_size, min_input_len, max_input_len,
+            batch_size, n_steps
+        )
         run_epoch(
-            data_gen(vocab_size, batch_size, n_batches),
+            data_gen_train,
             model,
             Seq2SeqLoss(model.head, criterion),
             optimizer=optimizer,
             lr_scheduler=lr_scheduler,
-            n_batches=n_batches,
+            n_steps=n_steps,
             curr_epoch=epoch,
-            n_epochs=n_epochs,
-            mode='train')
+            n_epochs=n_epochs
+        )
 
-        model.eval()
-        run_epoch(
-            data_gen(vocab_size, batch_size, int(n_batches/4)),
-            model,
-            Seq2SeqLoss(model.head, criterion),
-            n_batches=int(n_batches/4),
-            mode='eval')
-
-    print('=== Post-training test ===')
-    model.eval()
-    src = torch.LongTensor([list(range(10))])
-    max_len = src.shape[1]
-    src_mask = torch.ones(1, 1, max_len)
-    print(f'Source: {src}')
-    pred = decode_greedy(model, src, src_mask, max_len=max_len, start_symbol=0)
-    print(f'Prediction: {pred}')
+        print('=== Inference demo ===')
+        src = torch.LongTensor([
+            [1, 4, 3, 7, 8, 2]
+        ])
+        src_mask = torch.ones(1, 1, src.shape[1])
+        print(f'Source: {src.tolist()[0]}')
+        pred = decode_greedy(
+            model, src, src_mask, max_len=src.shape[1], start_idx=1, pad_idx=0
+        )
+        print(f'Prediction: {pred.tolist()[0]}\n')
 
 
-def data_gen(vocab_size, batch_size, n_batches):
+def data_gen(
+    vocab_size: int, min_input_len: int, max_input_len: int, 
+    batch_size: int, n_steps: int
+):
     """
-    Generates random data for a source-to-target copy task.
+    Generate random data for the input restoration task
+    (output = input).
     """
 
-    for i in range(n_batches):
-        # Each rows contains an example of length 10
-        data = torch.randint(1, vocab_size, size=(batch_size, 10))
+    for _ in range(n_steps):
+        data = np.random.randint(2, vocab_size, size=(batch_size, max_input_len))
+
+        # Insert padding randomly at the end
+        lens = np.random.randint(min_input_len, max_input_len+1, size=batch_size)
+        data = data * (np.arange(max_input_len) < lens[:, None])
+
+        # Insert start symbol
         data[:, 0] = 1
 
-        # TODO: try without requires_grad_(False) since detach is used
-        src = data.requires_grad_(False).clone().detach()
-        target = data.requires_grad_(False).clone().detach()
-
-        yield Batch(src, target, 0)
+        data = torch.tensor(data, dtype=torch.long)
+        yield Batch(data, data, pad=0)
 
 
-def train_de_to_en():
-    config = {
-        'batch_size': 8,
-        'distributed': False,
-        'n_epochs': 8,
-        'base_lr': 1.0,
-        'max_padding': 72,
-        'warmup': 3000}
+def decode_greedy(
+    model: Transformer, src: torch.Tensor, src_mask: torch.Tensor, 
+    max_len: int, start_idx: int, pad_idx: int
+) -> torch.Tensor:
+    """
+    Perform inference using greedy decoding (always output token
+    with highest score).
+    """
 
-    spacy_de, spacy_en = load_tokenizers()
-    src_vocab, target_vocab = load_vocab(spacy_de, spacy_en)
+    model.eval()
+    memory = model.encode(src, src_mask)
+    ys = torch.zeros(1, 1).fill_(start_idx).type_as(src)
 
-    if config['distributed']:
-        pass 
-    else:
-        train_worker(
-            None, 1, src_vocab, target_vocab, spacy_de, spacy_en, config, False)
+    for _ in range(max_len-1):
+        out = model.decode(
+            memory, src_mask, ys, subsequent_mask(ys.size(1)).type_as(src)
+        )
+
+        prob = model.head(out[:, -1])
+        _, next_word = torch.max(prob, dim=1)
+        next_word = next_word[0]
+
+        if next_word.item() == pad_idx:
+            break
+
+        ys = torch.cat(
+            [ys, torch.zeros(1, 1).type_as(src).fill_(next_word)], 
+            dim=1
+        )
+
+    return ys
 
 
 if __name__ == '__main__':
-    # inference_test()
-    # label_smoothing_test()
-    train_copy_task()
-    # train_de_to_en()
+    VOCAB_SIZE = 10  # Inputs will be random ints from [0, VOCAB_SIZE-1] interval
+                     # where 0 denotes padding and 1 is a start symbol 
+                     # (to make things easier, both src and target has start symbol)
+    MIN_INPUT_LEN = 3
+    MAX_INPUT_LEN = 10
+    BATCH_SIZE = 64
+    N_STEPS = 16  # Number of randomly generated batches per epoch
+    N_EPOCHS = 8
+
+    train_restore_input_task(
+        vocab_size=VOCAB_SIZE,
+        min_input_len=MIN_INPUT_LEN,
+        max_input_len=MAX_INPUT_LEN,
+        batch_size=BATCH_SIZE,
+        n_steps=N_STEPS,
+        n_epochs=N_EPOCHS
+    )
