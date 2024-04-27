@@ -18,5 +18,5 @@ input at output.
 
 ### Requirements
 
-See [requirements.txt](./requirements.txt) (Python 3.10.12).
+See [requirements.txt](./requirements.txt) (Python 3.10.12, CPU).
 
