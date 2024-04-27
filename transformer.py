@@ -5,10 +5,9 @@ import torch.nn as nn
 
 from layers import (
     LayerNorm, FeedForward, PositionalEncoding, Embedding, 
-    ClassificationHead, ResConnectionWithLayerNorm
+    ClassificationHead, ResConnectionWithLayerNorm, MultiHeadedAttention
 )
 from utils import clones
-from attention import MultiHeadedAttention
 
 
 class EncoderLayer(nn.Module):
